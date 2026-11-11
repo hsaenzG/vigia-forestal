@@ -142,3 +142,26 @@ svg { width: 100%; display: block; }
 @media (prefers-reduced-motion: reduce) {
   .feed li { animation: none; }
 }
+
+/* ---------- móvil (para quien escanea el QR en la charla) ---------- */
+@media (max-width: 700px) {
+  .panel { padding: 10px 12px; border-radius: 12px; }
+  .brand { top: 8px; left: 8px; right: 8px; width: auto; }
+  .brand .subtitle, .logo { display: none; }
+  h1 { font-size: 17px; }
+  .live-row { margin-top: 6px; }
+  .side { top: 92px; left: 8px; right: 8px; width: auto; max-height: none; overflow: visible; }
+  .side .tabs, .side .ranking, .side h2, .side .feed { display: none; }
+  .kpis { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .kpi { padding: 6px; }
+  .kpi-label { font-size: 9px; line-height: 1.2; }
+  .kpi-value { font-size: 15px; }
+  .kpi-foot { font-size: 8px; }
+  .filters, .filters.collapsed { display: block; top: auto; bottom: 8px; left: 8px; right: 8px; width: auto; }
+  .filters h2 { margin: 8px 0 4px; font-size: 10px; }
+  .filters h2:nth-of-type(3), .toggles { display: none; }
+  .row { margin-top: 4px; }
+  .detail { left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 58vh; z-index: 20; }
+  .credits { display: none; }
+  #bigYear { font-size: 56px; bottom: auto; top: 190px; }
+}

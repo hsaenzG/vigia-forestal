@@ -155,8 +155,9 @@
     .hexMargin(0.15)
     .hexTransitionDuration(800)
     .hexAltitude(({ sumWeight }) => 0.012 + Math.min(0.32, Math.sqrt(sumWeight) * 0.006))
-    .hexTopColor(({ sumWeight }) => fireColor(sumWeight, 0.95))
-    .hexSideColor(({ sumWeight }) => fireColor(sumWeight, 0.55))
+    // colores OPACOS: miles de columnas translúcidas obligan a ordenar por frame (15 fps -> 40+)
+    .hexTopColor(({ sumWeight }) => fireColor(sumWeight, 1))
+    .hexSideColor(({ sumWeight }) => fireColor(sumWeight, 0.6))
     .hexLabel(({ sumWeight, points }) => `<div class="globe-tip"><b>🔥 ${fmt.format(sumWeight)} focos de calor</b><br/>${escapeHtml(countryName(points[0].iso, "Océano / costa"))}</div>`)
     // alertas: anillos pulsantes
     .ringColor((a) => (t) => (a.nivel === "alta" ? `rgba(255,59,92,${1 - t})` : `rgba(245,158,11,${1 - t})`))
@@ -168,7 +169,7 @@
   globe.controls().autoRotate = true;
   globe.controls().autoRotateSpeed = 0.35;
   globe.controls().addEventListener("start", () => (state.lastInteraction = Date.now()));
-  globe.pointOfView({ lat: -5, lng: -40, altitude: 2.3 });
+  globe.pointOfView({ lat: -5, lng: -40, altitude: window.innerWidth < 700 ? 3.4 : 2.3 });
   const resize = () => globe.width(window.innerWidth).height(window.innerHeight);
   window.addEventListener("resize", resize);
   resize();
@@ -196,10 +197,10 @@
       <span class="muted">Clic para ver detalle</span></div>`;
   }
 
-  function fireColor(w, a) {
+  function fireColor(w, shade) {
     const t = Math.min(1, Math.log10(1 + w) / 3);
-    const r = 255, g = Math.round(200 - 160 * t), b = Math.round(60 - 50 * t);
-    return `rgba(${r},${g},${b},${a})`;
+    const r = 255 * shade, g = (200 - 160 * t) * shade, b = (60 - 50 * t) * shade;
+    return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
   }
 
   // auto-rotación: se pausa mientras la persona interactúa
