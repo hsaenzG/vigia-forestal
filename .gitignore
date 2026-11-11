@@ -1,0 +1,7 @@
+.venv/
+.aws-sam/
+.local-data/
+__pycache__/
+*.pyc
+.DS_Store
+.playwright-mcp/

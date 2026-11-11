@@ -1,0 +1,208 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Vigía Forestal — monitoreo de deforestación global, 100% serverless.
+  EventBridge Scheduler (semanal) -> Lambda ingesta (NASA FIRMS + GFW) -> S3 ->
+  EventBridge -> Agente Strands (Amazon Nova Lite) -> S3 -> CloudFront -> navegador.
+
+Parameters:
+  ModelId:
+    Type: String
+    Default: us.amazon.nova-lite-v1:0
+    Description: Modelo de Bedrock del agente (el correcto, no el más grande).
+  IngestRate:
+    Type: String
+    Default: rate(7 days)
+    Description: Frecuencia de ingesta (los datos se publican semanalmente).
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Architectures: [arm64] # Graviton: menos energía por invocación
+    CodeUri: backend/src
+    MemorySize: 256
+    Timeout: 30
+    LoggingConfig:
+      LogFormat: JSON
+    Environment:
+      Variables:
+        VIGIA_MODE: aws
+        DATA_BUCKET: !Ref SiteBucket
+        EVENT_BUS_NAME: !Ref EventBus
+        MODEL_ID: !Ref ModelId
+
+Resources:
+  # ------------------------------------------------------------ almacenamiento
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+
+  EventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub ${AWS::StackName}-bus
+
+  # ------------------------------------------------------------ dependencias
+  StrandsLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      Description: Strands Agents SDK
+      ContentUri: backend/layer
+      CompatibleRuntimes: [python3.13]
+      CompatibleArchitectures: [arm64]
+    Metadata:
+      BuildMethod: makefile
+      BuildArchitecture: arm64
+
+  # ------------------------------------------------------------ ingesta
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: vigia.handlers.ingest.handler
+      MemorySize: 1024
+      Timeout: 180
+      Policies:
+        - S3CrudPolicy: { BucketName: !Ref SiteBucket }
+        - EventBridgePutEventsPolicy: { EventBusName: !Ref EventBus }
+      Events:
+        Schedule:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: !Ref IngestRate
+            Input: '{"source":"scheduler"}'
+
+  # ------------------------------------------------------------ agente
+  AnalystFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: vigia.handlers.analyst.handler
+      MemorySize: 1024
+      Timeout: 90
+      Layers: [!Ref StrandsLayer]
+      Policies:
+        - S3CrudPolicy: { BucketName: !Ref SiteBucket } # lee datos, escribe data/alerts.json
+        - Statement:
+            - Effect: Allow
+              Action: [bedrock:InvokeModel, bedrock:InvokeModelWithResponseStream]
+              Resource:
+                - arn:aws:bedrock:*::foundation-model/amazon.nova-*
+                - !Sub arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*amazon.nova-*
+      Events:
+        DataUpdated:
+          Type: EventBridgeRule
+          Properties:
+            EventBusName: !Ref EventBus
+            Pattern:
+              source: [vigia.forestal]
+              detail-type: [DataUpdated]
+            RetryPolicy: { MaximumRetryAttempts: 0 }
+        Analyze:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /analyze
+            Method: POST
+
+  # ------------------------------------------------------------ API del agente
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: ["*"]
+        AllowMethods: [POST, OPTIONS]
+        AllowHeaders: [content-type]
+        MaxAge: 600
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+
+  # ------------------------------------------------------------ sitio web
+  SiteOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-oac
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  DataCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub ${AWS::StackName}-data
+        MinTTL: 0
+        DefaultTTL: 300
+        MaxTTL: 86400
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig: { CookieBehavior: none }
+          HeadersConfig: { HeaderBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+
+  SiteDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Vigia Forestal
+        DefaultRootObject: index.html
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: site
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt SiteOAC.Id
+            S3OriginConfig: { OriginAccessIdentity: "" }
+        DefaultCacheBehavior:
+          TargetOriginId: site
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
+        CacheBehaviors:
+          - PathPattern: data/*
+            TargetOriginId: site
+            ViewerProtocolPolicy: redirect-to-https
+            Compress: true
+            CachePolicyId: !Ref DataCachePolicy
+          - PathPattern: config.js
+            TargetOriginId: site
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
+
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: cloudfront.amazonaws.com }
+            Action: s3:GetObject
+            Resource: !Sub ${SiteBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${SiteDistribution}
+
+Outputs:
+  SiteUrl:
+    Value: !Sub https://${SiteDistribution.DomainName}
+  ApiUrl:
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+  SiteBucketName:
+    Value: !Ref SiteBucket
+  DistributionId:
+    Value: !Ref SiteDistribution
+  IngestFunctionName:
+    Value: !Ref IngestFunction
+  AnalystFunctionName:
+    Value: !Ref AnalystFunction

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vigía Forestal · deforestación global con datos satelitales</title>
+  <meta name="description" content="Monitoreo serverless de deforestación global con datos satelitales reales de NASA FIRMS y Global Forest Watch." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌳</text></svg>" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="globe" aria-label="Globo terráqueo 3D interactivo con la pérdida de cobertura arbórea y focos de calor"></div>
+
+  <!-- Año grande durante la reproducción -->
+  <div id="bigYear" aria-hidden="true"></div>
+
+  <!-- Encabezado -->
+  <header class="panel brand">
+    <div class="brand-row">
+      <span class="logo" aria-hidden="true">🌳</span>
+      <div>
+        <h1>Vigía Forestal</h1>
+        <p class="subtitle">Deforestación global con datos satelitales reales</p>
+      </div>
+    </div>
+    <div class="live-row">
+      <span id="liveBadge" class="badge data" role="status">📡 CARGANDO</span>
+      <span id="freshness" class="muted small"></span>
+    </div>
+  </header>
+
+  <!-- Filtros -->
+  <section class="panel filters" aria-label="Filtros"><form autocomplete="off" onsubmit="return false">
+    <h2>Pérdida de cobertura arbórea</h2>
+    <div class="range-labels">
+      <label for="fromYear">Desde <strong id="fromLabel">2001</strong></label>
+      <label for="toYear">Hasta <strong id="toLabel">2024</strong></label>
+    </div>
+    <div class="dual-range">
+      <input id="fromYear" type="range" min="2001" max="2024" step="1" value="2001" aria-label="Año inicial" />
+      <input id="toYear" type="range" min="2001" max="2024" step="1" value="2024" aria-label="Año final" />
+    </div>
+    <div class="row">
+      <div class="segmented" role="radiogroup" aria-label="Modo de agregación">
+        <button type="button" data-mode="cumulative" class="active" role="radio" aria-checked="true">Acumulado</button>
+        <button type="button" data-mode="annual" role="radio" aria-checked="false">Por año</button>
+      </div>
+      <button id="playBtn" type="button" class="btn primary" aria-label="Reproducir el avance año por año">▶ Ver el avance</button>
+    </div>
+
+    <h2>Focos de calor <span class="muted small">NASA FIRMS · última semana</span></h2>
+    <div class="segmented" id="fireWindow" role="radiogroup" aria-label="Ventana de tiempo de focos de calor">
+      <button type="button" data-days="1" class="active" role="radio" aria-checked="true">Último día</button>
+      <button type="button" data-days="2" role="radio" aria-checked="false">48 h</button>
+      <button type="button" data-days="3" role="radio" aria-checked="false">3 días</button>
+      <button type="button" data-days="7" role="radio" aria-checked="false">7 días</button>
+    </div>
+
+    <h2>Capas</h2>
+    <div class="toggles">
+      <label><input type="checkbox" id="layerLoss" checked /> Pérdida (3D)</label>
+      <label><input type="checkbox" id="layerFires" checked /> Focos de calor</label>
+      <label><input type="checkbox" id="layerAlerts" checked /> Alertas del agente</label>
+      <label><input type="checkbox" id="autoRotate" checked /> Rotación</label>
+      <label><input type="checkbox" id="dayTexture" /> Vista de día</label>
+    </div>
+  </form></section>
+
+  <!-- Métricas + ranking + feed -->
+  <aside class="panel side" aria-label="Métricas y reporte del agente">
+    <div class="kpis">
+      <div class="kpi">
+        <span class="kpi-label">Pérdida mundial <span id="kpiPeriod"></span></span>
+        <span class="kpi-value" id="kpiLoss">—</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">Equivale a</span>
+        <span class="kpi-value" id="kpiFields">—</span>
+        <span class="kpi-foot">canchas de fútbol por minuto</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">Focos de calor <span id="kpiWindow">hoy</span></span>
+        <span class="kpi-value fire" id="kpiFires">—</span>
+      </div>
+      <div class="kpi">
+        <span class="kpi-label">Alertas del agente (semana)</span>
+        <span class="kpi-value alert" id="kpiAlerts">0</span>
+      </div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" data-rank="loss" class="active" aria-selected="true">Top pérdida</button>
+      <button type="button" role="tab" data-rank="fires" aria-selected="false">Top focos</button>
+    </div>
+    <ol id="ranking" class="ranking"></ol>
+
+    <h2>Reporte semanal del agente</h2>
+    <ul id="feed" class="feed"></ul>
+  </aside>
+
+  <!-- Detalle de país -->
+  <section id="detail" class="panel detail hidden" aria-label="Detalle del país" aria-live="polite">
+    <button type="button" class="close" id="closeDetail" aria-label="Cerrar detalle">✕</button>
+    <h2 id="detailName"></h2>
+    <p class="muted small" id="detailMeta"></p>
+    <div class="chart-title">Pérdida anual de cobertura arbórea (ha)</div>
+    <svg id="lossChart" viewBox="0 0 320 110" role="img" aria-label="Gráfica de pérdida anual"></svg>
+    <div class="chart-title">Focos de calor por día (últimos 7 días)</div>
+    <svg id="fireChart" viewBox="0 0 320 70" role="img" aria-label="Gráfica de focos de calor diarios"></svg>
+    <button id="analyzeBtn" type="button" class="btn primary wide">🤖 Analizar con el agente</button>
+    <div id="agentOut" class="agent-out hidden"></div>
+  </section>
+
+  <footer class="credits small muted">
+    Datos: <a href="https://firms.modaps.eosdis.nasa.gov/" target="_blank" rel="noopener">NASA FIRMS</a> (VIIRS NOAA-20) ·
+    <a href="https://www.globalforestwatch.org/" target="_blank" rel="noopener">Hansen/UMD/Global Forest Watch</a> vía
+    <a href="https://ourworldindata.org/deforestation" target="_blank" rel="noopener">Our World in Data</a> ·
+    Agente: Strands Agents + Amazon Nova · 100% serverless en AWS
+  </footer>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="assertive"></div>
+
+  <script src="config.js"></script>
+  <script src="vendor/globe.gl.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

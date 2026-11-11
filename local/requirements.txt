@@ -1,0 +1,4 @@
+strands-agents==1.64.0
+aiohttp==3.14.5
+boto3
+botocore[crt]
