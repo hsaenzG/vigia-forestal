@@ -26,11 +26,12 @@ ICONS = {
     "scheduler": RES / "Res_Application-Integration/Res_Amazon-EventBridge_Scheduler_48.svg",
     "users": RES / "Res_General-Icons/Res_48_Light/Res_Users_48_Light.svg",
     "internet": RES / "Res_General-Icons/Res_48_Light/Res_Internet_48_Light.svg",
+    "code": RES / "Res_General-Icons/Res_48_Light/Res_Source-Code_48_Light.svg",
     "cloud": PKG / "Architecture-Group-Icons_07312025/AWS-Cloud-logo_32.svg",
 }
 
 INK, GRAY, GREEN, RED = "#232F3E", "#5F6B7A", "#037F0C", "#D91515"
-W, H, S = 1700, 980, 72  # lienzo y tamaño de icono
+W, H, S = 1700, 1240, 72  # lienzo y tamaño de icono
 FONT = "font-family='Arial, Helvetica, sans-serif'"
 
 
@@ -79,9 +80,10 @@ icon("lambda", C2, R1, "AWS Lambda", "Ingesta (Python)")
 icon("eventbridge", C3, R1, "Amazon EventBridge", "evento DataUpdated")
 icon("lambda", C4, R1, "AWS Lambda", "Agente Strands")
 icon("bedrock", C5, R1, "Amazon Bedrock", "Amazon Nova Lite")
-icon("s3", C2, R2, "Amazon S3", "loss · fires · alerts .json")
-icon("cloudfront", C1, R2, "Amazon CloudFront", "CDN de datos (bucket privado)")
-icon("amplify", C1, R3, "AWS Amplify Hosting", "sitio + proxy /datos")
+icon("s3", C2, R2, "Amazon S3", "SOLO datos: loss · fires · alerts .json")
+icon("cloudfront", C1, R2, "Amazon CloudFront", "CDN de los datos .json")
+icon("amplify", C1, R3, "AWS Amplify Hosting", "aloja el sitio (HTML · JS · globo 3D)")
+icon("code", C1, 1050, "Archivos del sitio", "make site → deploy directo a Amplify", size=56)
 icon("apigw", C4, R3, "Amazon API Gateway", "POST /analyze")
 
 # flujo semanal
@@ -96,12 +98,13 @@ line([(C2 - h, R2), (C1 + h, R2)])
 
 # lectura desde el navegador
 line([(140 + 34, 625), (C1 - h, R3 - 6)], label="abre el sitio", lx=392, ly=676)
-line([(C1, R3 - h), (C1, R2 + h + 50)], label="/datos/*", lx=C1 + 48, ly=(R2 + R3) / 2 + 30)
-line([(140, 610 + 30 + 48), (140, 870), (C4, 870), (C4, R3 + h + 50)], label="pide un análisis", lx=820, ly=860)
+line([(C1, R3 - h), (C1, R2 + h + 50)], label="proxy solo de /datos/*.json", lx=C1 + 112, ly=(R2 + R3) / 2 + 30)
+line([(C1, 1050 - 34), (C1, R3 + h + 50)], color=GREEN, label="despliegue del sitio", lx=C1 + 95, ly=960)
+line([(140, 610 + 30 + 48), (140, 1170), (C4, 1170), (C4, R3 + h + 50)], label="pide un análisis", lx=820, ly=1160)
 line([(C4, R3 - h), (C4, R1 + h + 50)], color=GREEN)
 
 # leyenda
-parts.append(f"<text x='{(310 + 1650) / 2}' y='955' {FONT} font-size='18' font-weight='bold' fill='{GREEN}' "
+parts.append(f"<text x='{(310 + 1650) / 2}' y='1222' {FONT} font-size='18' font-weight='bold' fill='{GREEN}' "
              f"text-anchor='middle'>Nada encendido esperando: todo escala a cero</text>")
 
 defs = "".join(
