@@ -3,7 +3,8 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   Vigía Forestal — monitoreo de deforestación global, 100% serverless.
   EventBridge Scheduler (semanal) -> Lambda ingesta (NASA FIRMS + GFW) -> S3 ->
-  EventBridge -> Agente Strands (Amazon Nova Lite) -> S3 -> CloudFront -> navegador.
+  EventBridge -> Agente Strands (Amazon Nova Lite) -> S3 -> CloudFront (datos).
+  Sitio web en AWS Amplify Hosting · POST /analyze en API Gateway.
 
 Parameters:
   ModelId:
@@ -124,7 +125,10 @@ Resources:
         ThrottlingBurstLimit: 20
         ThrottlingRateLimit: 10
 
-  # ------------------------------------------------------------ sitio web
+  # ------------------------------------------------------------ datos (CDN)
+  # El bucket SOLO guarda datos (loss/fires/alerts .json). CloudFront los sirve con
+  # caché; el sitio los pide por el proxy /datos de Amplify (mismo origen, sin CORS).
+  # Los IDs lógicos "Site*" se conservan para no reemplazar el bucket ni la distribución.
   SiteOAC:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
@@ -154,32 +158,20 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: Vigia Forestal
-        DefaultRootObject: index.html
+        Comment: Vigia Forestal - CDN de datos
         HttpVersion: http2and3
         PriceClass: PriceClass_100
         Origins:
-          - Id: site
+          - Id: data
             DomainName: !GetAtt SiteBucket.RegionalDomainName
             OriginAccessControlId: !GetAtt SiteOAC.Id
             S3OriginConfig: { OriginAccessIdentity: "" }
         DefaultCacheBehavior:
-          TargetOriginId: site
+          TargetOriginId: data
           ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
           Compress: true
-          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
-        CacheBehaviors:
-          - PathPattern: data/*
-            TargetOriginId: site
-            ViewerProtocolPolicy: redirect-to-https
-            Compress: true
-            CachePolicyId: !Ref DataCachePolicy
-            # Access-Control-Allow-Origin: * para que el frontend en GitHub Pages lea los datos
-            ResponseHeadersPolicyId: 60669652-455b-4ae9-85a4-c4c02393f86c # Managed-SimpleCORS
-          - PathPattern: config.js
-            TargetOriginId: site
-            ViewerProtocolPolicy: redirect-to-https
-            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
+          CachePolicyId: !Ref DataCachePolicy
 
   SiteBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -190,14 +182,54 @@ Resources:
           - Effect: Allow
             Principal: { Service: cloudfront.amazonaws.com }
             Action: s3:GetObject
-            Resource: !Sub ${SiteBucket.Arn}/*
+            Resource: !Sub ${SiteBucket.Arn}/data/* # solo los datos públicos, no state/
             Condition:
               StringEquals:
                 AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${SiteDistribution}
 
+  # ------------------------------------------------------------ sitio web (Amplify Hosting)
+  WebApp:
+    Type: AWS::Amplify::App
+    Properties:
+      Name: !Sub ${AWS::StackName}-web
+      Description: Frontend de Vigía Forestal (globo 3D)
+      Platform: WEB
+      # El navegador solo habla con el dominio del sitio: /datos/* se sirve (proxy) desde el
+      # CDN de datos. Mismo origen = sin CORS.
+      CustomRules:
+        - Source: /datos/<*>
+          Target: !Sub https://${SiteDistribution.DomainName}/data/<*>
+          Status: "200"
+      CustomHeaders: |
+        customHeaders:
+          - pattern: '**/*'
+            headers:
+              - key: Strict-Transport-Security
+                value: max-age=31536000; includeSubDomains
+              - key: X-Content-Type-Options
+                value: nosniff
+              - key: Referrer-Policy
+                value: strict-origin-when-cross-origin
+          - pattern: 'config.js'
+            headers:
+              - key: Cache-Control
+                value: no-store
+
+  WebBranch:
+    Type: AWS::Amplify::Branch
+    Properties:
+      AppId: !GetAtt WebApp.AppId
+      BranchName: main
+      Stage: PRODUCTION
+
 Outputs:
   SiteUrl:
-    Value: !Sub https://${SiteDistribution.DomainName}
+    Description: URL por defecto de Amplify (el dominio propio se asocia con `make domain`)
+    Value: !Sub https://main.${WebApp.DefaultDomain}
+  WebAppId:
+    Value: !GetAtt WebApp.AppId
+  DataUrl:
+    Value: !Sub https://${SiteDistribution.DomainName}/data
   ApiUrl:
     Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
   SiteBucketName:

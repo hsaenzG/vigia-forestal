@@ -59,7 +59,9 @@
   }
 
   async function getJson(path, bust) {
-    const url = `${CFG.dataUrl}/${path}${bust ? `?v=${bust}` : ""}`;
+    // countries.geojson viaja con el frontend; los datos semanales vienen del CDN de datos
+    const base = path === "countries.geojson" ? "data" : CFG.dataUrl;
+    const url = `${base}/${path}${bust ? `?v=${bust}` : ""}`;
     const r = await fetch(url, { cache: "no-cache" });
     if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
     return r.json();
